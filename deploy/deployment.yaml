@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    tier: server
+  name: cloud6-coredns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      tier: server
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        tier: server
+    spec:
+      containers:
+      - args:
+        - -conf
+        - /etc/coredns/Corefile
+        image: ardikabs/coredns:1.8.0-custom
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: coredns
+        ports:
+        - containerPort: 53
+          name: dns
+          protocol: UDP
+        - containerPort: 53
+          name: dns-tcp
+          protocol: TCP
+        - containerPort: 9153
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ready
+            port: 8181
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        volumeMounts:
+        - mountPath: /etc/coredns
+          name: cloud6-corefile
+          readOnly: true
+        - mountPath: /etc/coredns/data
+          name: cloud6-data-client
+          readOnly: true
+        - mountPath: /etc/coredns/zones
+          name: cloud6-zones
+          readOnly: true
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: Corefile
+            path: Corefile
+          name: cloud6-corefile
+        name: cloud6-corefile
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: clients.yaml
+            path: clients.yaml
+          - key: records.yaml
+            path: records.yaml
+          name: cloud6-data
+        name: cloud6-data-client
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: db.cloud6.id
+            path: db.cloud6.id
+          name: cloud6-zones
+        name: cloud6-zones

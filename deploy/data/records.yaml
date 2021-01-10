@@ -1,0 +1,6 @@
+- name: myrepublic
+  records:
+  - name: cdn.cloud6.id
+    ttl: 300
+    type: CNAME
+    value: cf-sg-jetdino.cloud6.id

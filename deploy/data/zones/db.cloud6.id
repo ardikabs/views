@@ -1,0 +1,19 @@
+$ORIGIN cloud6.id.
+$TTL 300
+@       IN SOA    ns1.cloud6.id. admin.cloud6.id. (
+2021010801      ; Serial
+10800           ; Refresh
+3600            ; Retry
+3600000         ; Expire
+3600            ; Negative Cashe TTL
+)
+
+@               IN NS         ns1.cloud6.id.
+ns1             IN A          103.136.17.218
+cdn             IN CNAME      cgk-3d-jetdino.cloud6.id.
+cf-sg-jetdino   500 IN A      192.168.1.1
+cf-sg-jetdino   600 IN A      192.168.1.2
+cf-sg-jetdino   300 IN A      192.168.1.3
+cf-sg-jetdino   3500 IN A     192.168.1.4
+cgk-3d-jetdino  IN A          192.168.2.1
+bukalapak.cdn   IN CNAME      s4.bukalapak.com.

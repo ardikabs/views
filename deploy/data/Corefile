@@ -1,0 +1,29 @@
+local:65353 {
+    ready :8181
+    health :8080 {
+        lameduck 1s
+    }
+}
+
+. {
+    log
+    errors
+    forward . 8.8.8.8 8.8.4.4 1.1.1.1
+
+    loop
+    prometheus :9153
+}
+
+cloud6.id {
+    reload 2s
+    log
+    errors
+    loadbalance round_robin
+
+    simpledns {
+        clients /etc/coredns/data/clients.yaml
+        records /etc/coredns/data/records.yaml
+    }
+
+    file /etc/coredns/zones/db.cloud6.id cloud6.id
+}
