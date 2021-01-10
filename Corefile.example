@@ -1,0 +1,38 @@
+local:65353 {
+    ready :8181
+    health :8080 {
+        lameduck 1s
+    }
+}
+
+. {
+    log
+    errors
+
+    cache 3600 . {
+        success 10000 5
+        denial 0
+        prefetch 5 10m 10%
+    }
+
+    loop
+    prometheus :9153
+    forward . 1.1.1.1 8.8.8.8
+}
+
+example.internal {
+    reload 2s
+    log
+    errors
+    loadbalance round_robin
+
+    views {
+        reload 10s
+        clients data/clients.yaml
+        records data/records.yaml
+    }
+
+    file data/zones/db.example.internal example.internal {
+        reload 10s
+    }
+}
