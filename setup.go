@@ -137,34 +137,39 @@ func (s *SimpleDNS) loadConfig() {
 	}
 
 	s.ClientACLs = rawClients
-	s.Records = make(map[string][]Record)
+	s.ClientZones = make(map[string]Zones)
 
 	for _, r := range rawRecords {
-		records := []Record{}
-		for _, rawRecord := range r.Records {
-			xtype := strings.ToUpper(rawRecord.Type)
-			var t uint16
+		zones := Zones{
+			Names: []string{},
+			Z:     make(map[string]*Zone),
+		}
 
-			switch xtype {
+		for _, rawRecord := range r.Records {
+			t := strings.ToUpper(rawRecord.Type)
+			var rrtype uint16
+
+			switch t {
 			case "A":
-				t = dns.TypeA
+				rrtype = dns.TypeA
 			case "AAAA":
-				t = dns.TypeAAAA
+				rrtype = dns.TypeAAAA
 			case "CNAME":
-				t = dns.TypeCNAME
+				rrtype = dns.TypeCNAME
 			}
 
-			record := Record{
+			rr := Zone{
 				Name:  plugin.Host(rawRecord.Name).Normalize(),
 				TTL:   rawRecord.TTL,
-				Type:  t,
+				Type:  rrtype,
 				Value: plugin.Host(rawRecord.Value).Normalize(),
 			}
 
-			records = append(records, record)
+			zones.Names = append(zones.Names, rr.Name)
+			zones.Z[rr.Name] = &rr
 		}
 
-		s.Records[r.Name] = records
+		s.ClientZones[r.Name] = zones
 	}
 
 }

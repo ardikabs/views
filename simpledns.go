@@ -20,9 +20,10 @@ type SimpleDNS struct {
 	Reload         time.Duration
 	ClientFilename string
 	RecordFilename string
-	ClientACLs     []ClientACL
-	Records        map[string][]Record
-	Upstream       *upstream.Upstream
+
+	ClientACLs  []ClientACL
+	ClientZones map[string]Zones
+	Upstream    *upstream.Upstream
 }
 
 type (
@@ -31,7 +32,12 @@ type (
 		CIDRPrefixes []string `yaml:"prefix_list"`
 	}
 
-	Record struct {
+	Zones struct {
+		Z     map[string]*Zone
+		Names []string
+	}
+
+	Zone struct {
 		Name  string
 		TTL   uint32
 		Type  uint16
@@ -51,27 +57,31 @@ func (s SimpleDNS) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 		for _, cidr := range client.CIDRPrefixes {
 			_, cidrNet, _ := net.ParseCIDR(cidr)
 			if cidrNet.Contains(net.ParseIP(userIP)) {
-				log.Infof("User IP: %s\n", userIP)
-				log.Infof("Question: %s\n", qname)
+				log.Infof("match user IP with registered client (%s): %s (%s)", client.Name, userIP, qname)
 
-				zones, ok := s.Records[client.Name]
-				if !ok {
+				zone := plugin.Zones(s.ClientZones[client.Name].Names).Matches(qname)
+				if zone == "" {
+					log.Infof("no zone is match with the question given: %s", qname)
 					return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
 				}
 
-				for _, zone := range zones {
-					if zone.Name == qname {
-						rr := new(dns.CNAME)
-						rr.Hdr = dns.RR_Header{Name: qname, Rrtype: dns.TypeCNAME, Class: state.QClass(), Ttl: 300}
-						rr.Target = zone.Value
-						answers = append(answers, rr)
-
-						if state.QType() != dns.TypeCNAME {
-							rrs := lookup(ctx, state, zone.Value, state.QType())
-							answers = append(answers, rrs...)
-						}
-					}
+				z, ok := s.ClientZones[client.Name].Z[zone]
+				if !ok || z == nil {
+					log.Infof("no client zone was found: %s", zone)
+					return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
 				}
+
+				rr := new(dns.CNAME)
+				rr.Hdr = dns.RR_Header{Name: qname, Rrtype: dns.TypeCNAME, Class: state.QClass(), Ttl: z.TTL}
+				rr.Target = z.Value
+
+				answers = append(answers, rr)
+
+				if state.QType() != dns.TypeCNAME {
+					rrs := lookup(ctx, state, z.Value, state.QType())
+					answers = append(answers, rrs...)
+				}
+
 			}
 		}
 	}
