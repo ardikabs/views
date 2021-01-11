@@ -5,7 +5,8 @@ metadata:
   labels:
     tier: server
 spec:
-  type: ClusterIP
+  type: NodePort
+  externalTrafficPolicy: Local
   ports:
   - name: dns-tcp
     port: 53

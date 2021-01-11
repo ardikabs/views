@@ -22,15 +22,15 @@ type SimpleDNS struct {
 	ClientFilename string
 	RecordFilename string
 
-	ClientACLs  []ClientACL
+	ClientACLs  []*ClientACL
 	ClientZones map[string]Zones
 	Upstream    *upstream.Upstream
 }
 
 type (
 	ClientACL struct {
-		Name         string   `yaml:"name"`
-		CIDRPrefixes []string `yaml:"prefix_list"`
+		Name     string
+		CIDRNets []*net.IPNet
 	}
 
 	Zones struct {
@@ -51,7 +51,6 @@ func (s SimpleDNS) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	state := request.Request{W: w, Req: r}
 
 	answers, err := s.lookup(ctx, state, state.QName())
-
 	if err != nil {
 		return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
 	}
@@ -78,8 +77,7 @@ func (s *SimpleDNS) lookup(ctx context.Context, state request.Request, qname str
 
 Loop:
 	for _, client := range s.ClientACLs {
-		for _, cidr := range client.CIDRPrefixes {
-			_, cidrNet, _ := net.ParseCIDR(cidr)
+		for _, cidrNet := range client.CIDRNets {
 			if cidrNet.Contains(net.ParseIP(state.IP())) {
 				log.Infof("match user IP with registered client (%s): %s (%s)", client.Name, state.IP(), qname)
 
@@ -106,6 +104,10 @@ Loop:
 				break Loop
 			}
 		}
+	}
+
+	if len(answers) == 0 {
+		return nil, fmt.Errorf("Skipping cause no record was found: %s", qname)
 	}
 
 	return answers, nil

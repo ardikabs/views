@@ -22,6 +22,11 @@ var (
 )
 
 type (
+	ClientACLFile struct {
+		Name         string   `yaml:"name"`
+		CIDRPrefixes []string `yaml:"prefix_list"`
+	}
+
 	RecordFile struct {
 		Name    string `yaml:"name"`
 		Records []struct {
@@ -124,7 +129,7 @@ func (s *SimpleDNS) reload() chan bool {
 }
 
 func (s *SimpleDNS) loadConfig() {
-	var rawClients []ClientACL
+	var rawClients []ClientACLFile
 	var rawRecords []RecordFile
 
 	file, err := ioutil.ReadFile(s.ClientFilename)
@@ -139,18 +144,26 @@ func (s *SimpleDNS) loadConfig() {
 		log.Fatalf("error: %v", err)
 	}
 
+	s.ClientACLs = []*ClientACL{}
+
 	for _, client := range rawClients {
+		var cidrNets []*net.IPNet
 		for _, cidr := range client.CIDRPrefixes {
-			_, _, err := net.ParseCIDR(cidr)
+			_, cidrNet, err := net.ParseCIDR(cidr)
+			cidrNets = append(cidrNets, cidrNet)
+
 			if err != nil {
 				log.Fatalf("error: %v", err)
 			}
 		}
+
+		s.ClientACLs = append(s.ClientACLs, &ClientACL{
+			Name:     client.Name,
+			CIDRNets: cidrNets,
+		})
 	}
 
-	s.ClientACLs = rawClients
 	s.ClientZones = make(map[string]Zones)
-
 	for _, r := range rawRecords {
 		zones := Zones{
 			Names: []string{},
