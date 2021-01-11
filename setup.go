@@ -3,6 +3,7 @@ package simpledns
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
+	"github.com/coredns/coredns/plugin/pkg/upstream"
 	"github.com/miekg/dns"
 	"gopkg.in/yaml.v2"
 )
@@ -66,7 +68,8 @@ func parse(c *caddy.Controller) (SimpleDNS, error) {
 	)
 
 	simpleDNS := SimpleDNS{
-		Reload: 5,
+		Reload:   5,
+		Upstream: upstream.New(),
 	}
 
 	for c.Next() {
@@ -136,13 +139,22 @@ func (s *SimpleDNS) loadConfig() {
 		log.Fatalf("error: %v", err)
 	}
 
+	for _, client := range rawClients {
+		for _, cidr := range client.CIDRPrefixes {
+			_, _, err := net.ParseCIDR(cidr)
+			if err != nil {
+				log.Fatalf("error: %v", err)
+			}
+		}
+	}
+
 	s.ClientACLs = rawClients
 	s.ClientZones = make(map[string]Zones)
 
 	for _, r := range rawRecords {
 		zones := Zones{
 			Names: []string{},
-			Z:     make(map[string]*Zone),
+			Z:     make(map[string]Zone),
 		}
 
 		for _, rawRecord := range r.Records {
@@ -166,7 +178,7 @@ func (s *SimpleDNS) loadConfig() {
 			}
 
 			zones.Names = append(zones.Names, rr.Name)
-			zones.Z[rr.Name] = &rr
+			zones.Z[rr.Name] = rr
 		}
 
 		s.ClientZones[r.Name] = zones

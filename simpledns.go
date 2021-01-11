@@ -2,6 +2,7 @@ package simpledns
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
@@ -33,7 +34,7 @@ type (
 	}
 
 	Zones struct {
-		Z     map[string]*Zone
+		Z     map[string]Zone
 		Names []string
 	}
 
@@ -48,27 +49,47 @@ type (
 // ServeDNS implements the plugin.Handler interface.
 func (s SimpleDNS) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
-	qname := state.Name()
-	userIP := state.IP()
 
+	answers, err := s.lookup(ctx, state, state.QName())
+
+	if err != nil {
+		return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
+	}
+
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Authoritative = true
+	m.Answer = answers
+
+	err = w.WriteMsg(m)
+	if err != nil {
+		log.Error(err)
+		return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
+	}
+
+	return dns.RcodeSuccess, nil
+}
+
+// Name implements the Handler interface.
+func (s SimpleDNS) Name() string { return "simpledns" }
+
+func (s *SimpleDNS) lookup(ctx context.Context, state request.Request, qname string) ([]dns.RR, error) {
 	var answers []dns.RR
 
+Loop:
 	for _, client := range s.ClientACLs {
 		for _, cidr := range client.CIDRPrefixes {
 			_, cidrNet, _ := net.ParseCIDR(cidr)
-			if cidrNet.Contains(net.ParseIP(userIP)) {
-				log.Infof("match user IP with registered client (%s): %s (%s)", client.Name, userIP, qname)
+			if cidrNet.Contains(net.ParseIP(state.IP())) {
+				log.Infof("match user IP with registered client (%s): %s (%s)", client.Name, state.IP(), qname)
 
-				zone := plugin.Zones(s.ClientZones[client.Name].Names).Matches(qname)
-				if zone == "" {
-					log.Infof("no zone is match with the question given: %s", qname)
-					return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
+				z, ok := s.ClientZones[client.Name].Z[qname]
+				if !ok {
+					return nil, fmt.Errorf("no client zone was found: %s", qname)
 				}
 
-				z, ok := s.ClientZones[client.Name].Z[zone]
-				if !ok || z == nil {
-					log.Infof("no client zone was found: %s", zone)
-					return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
+				if z.Value == "" {
+					return nil, fmt.Errorf("no record value was found: %s", z.Name)
 				}
 
 				rr := new(dns.CNAME)
@@ -78,33 +99,20 @@ func (s SimpleDNS) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 				answers = append(answers, rr)
 
 				if state.QType() != dns.TypeCNAME {
-					rrs := lookup(ctx, state, z.Value, state.QType())
+					rrs := s.doLookup(ctx, state, z.Value, state.QType())
 					answers = append(answers, rrs...)
 				}
 
+				break Loop
 			}
 		}
 	}
 
-	if len(answers) > 0 {
-		m := new(dns.Msg)
-		m.SetReply(r)
-		m.Authoritative = true
-		m.Answer = answers
-
-		w.WriteMsg(m)
-		return dns.RcodeSuccess, nil
-	}
-	return plugin.NextOrFailure(s.Name(), s.Next, ctx, w, r)
+	return answers, nil
 }
 
-// Name implements the Handler interface.
-func (s SimpleDNS) Name() string { return "simpledns" }
-
-func lookup(ctx context.Context, state request.Request, target string, qtype uint16) []dns.RR {
-	u := upstream.New()
-
-	m, e := u.Lookup(ctx, state, target, qtype)
+func (s *SimpleDNS) doLookup(ctx context.Context, state request.Request, target string, qtype uint16) []dns.RR {
+	m, e := s.Upstream.Lookup(ctx, state, target, qtype)
 	if e != nil {
 		return nil
 	}
