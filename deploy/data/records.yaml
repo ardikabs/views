@@ -1,6 +1,10 @@
-- name: myrepublic
+- name: as63859
   records:
   - name: cdn.cloud6.id
     ttl: 300
     type: CNAME
     value: cf-sg-jetdino.cloud6.id
+  - name: dmm.stg.cdn.cloud6.id
+    ttl: 60
+    type: CNAME
+    value: dmm.stg.as7713.cdn.cloud6.id

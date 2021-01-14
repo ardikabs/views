@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud6-coredns-secondary
+  annotations:
+    metallb.universe.tf/allow-shared-ip: cloud6-coredns-secondary
+  labels:
+    tier: server
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  loadBalancerIP: 103.113.28.82
+  ports:
+  - name: dns-udp-53
+    port: 53
+    protocol: UDP
+    targetPort: 53
+  - name: dns-udp-1153
+    port: 1153
+    protocol: UDP
+    targetPort: 53
+  selector:
+    tier: server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud6-coredns-tcp-secondary
+  annotations:
+    metallb.universe.tf/allow-shared-ip: cloud6-coredns-secondary
+  labels:
+    tier: server
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  loadBalancerIP: 103.113.28.82
+  ports:
+  - name: dns-tcp-53
+    port: 53
+    protocol: TCP
+    targetPort: 53
+  selector:
+    tier: server

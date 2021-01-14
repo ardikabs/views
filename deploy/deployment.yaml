@@ -5,7 +5,7 @@ metadata:
     tier: server
   name: cloud6-coredns
 spec:
-  replicas: 1
+  replicas: 10
   selector:
     matchLabels:
       tier: server
@@ -23,7 +23,7 @@ spec:
       - args:
         - -conf
         - /etc/coredns/Corefile
-        image: ardikabs/coredns:1.8.0-custom
+        image: ardikabs/coredns:1.8.0-rc.1
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 5
@@ -66,6 +66,11 @@ spec:
         - mountPath: /etc/coredns/zones
           name: cloud6-zones
           readOnly: true
+      tolerations:
+      - operator: Equal
+        key: dedicated
+        value: dns
+        effect: NoExecute
       volumes:
       - configMap:
           defaultMode: 420

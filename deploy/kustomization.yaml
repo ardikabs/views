@@ -10,7 +10,9 @@ commonLabels:
 
 resources:
 - deployment.yaml
-- service.yaml
+- ns1-service.yaml
+- ns2-service.yaml
+- metrics-service.yaml
 
 configMapGenerator:
 - name: cloud6-corefile

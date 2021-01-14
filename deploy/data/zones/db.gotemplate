@@ -1,0 +1,6 @@
+$ORIGIN {{ .Origin }}.
+$TTL {{ .DefaultTTL }}
+
+@       IN SOA    {{ .Nameserver }} {{ .AdminNameserver }} ( {{ .Serial }} {{ .Refresh }} {{ .Retry }} {{ .Expire }} {{ .NegativeTTL }} )
+@                   {{ .RecordTTL }}    {{ .INType }}   {{ .RecordNSType }}         {{ .RecordNS }}
+{{ .RecordName }}   {{ .RecordTTL }}    {{ .INType }}   {{ .DNSType }}              {{ .Value }}
