@@ -75,11 +75,13 @@ func (s SimpleDNS) Name() string { return "simpledns" }
 func (s *SimpleDNS) lookup(ctx context.Context, state request.Request, qname string) ([]dns.RR, error) {
 	var answers []dns.RR
 
+	userIP := net.ParseIP(state.IP())
+
 Loop:
 	for _, client := range s.ClientACLs {
 		for _, cidrNet := range client.CIDRNets {
-			if cidrNet.Contains(net.ParseIP(state.IP())) {
-				log.Infof("match user IP with registered client (%s): %s (%s)", client.Name, state.IP(), qname)
+			if cidrNet.Contains(userIP) {
+				log.Infof("found match for user IP (%s) with registered client (%s) \"%s\"", userIP.String(), client.Name, qname)
 
 				z, ok := s.ClientZones[client.Name].Z[qname]
 				if !ok {

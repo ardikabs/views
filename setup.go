@@ -41,15 +41,15 @@ type (
 func init() { plugin.Register("simpledns", setup) }
 
 func setup(c *caddy.Controller) error {
-	simpleDNS, err := parse(c)
+	s, err := parse(c)
 	if err != nil {
 		return plugin.Error("simpledns", err)
 	}
 
-	reloadChan := simpleDNS.reload()
+	reloadChan := s.reload()
 
 	c.OnStartup(func() error {
-		simpleDNS.loadConfig()
+		s.loadConfig()
 		return nil
 	})
 
@@ -59,8 +59,8 @@ func setup(c *caddy.Controller) error {
 	})
 
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
-		simpleDNS.Next = next
-		return &simpleDNS
+		s.Next = next
+		return s
 	})
 
 	return nil
