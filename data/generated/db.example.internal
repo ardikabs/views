@@ -3,7 +3,7 @@
 $ORIGIN example.internal.
 $TTL 300
 
-@ IN SOA ns1.example.internal. admin.example.internal. ( 2021010806 10800 3600 2419200 3600 )
+@ IN SOA ns1.example.internal. admin.example.internal. ( 2021010806 10000 2400 604800 3600 )
 
 @ 500 IN NS ns1.example.internal.
 ns1 300 IN A 100.64.0.28
@@ -12,4 +12,5 @@ db-dc1 60 IN A 100.64.1.100
 web-dc1 60 IN A 100.64.1.101
 db-dc2 60 IN AAAA 2001:db8::68
 db-dc3 60 IN AAAA fe80::ac5d:ccff:fee2:881
+*.cdn 60 IN A 192.168.100.1
 

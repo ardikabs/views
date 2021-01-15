@@ -21,8 +21,10 @@ type Views struct {
 	Fall fall.F
 
 	ReloadInterval time.Duration
-	ClientFilename string
-	RecordFilename string
+	Client         string
+	ClientSchema   string
+	Record         string
+	RecordSchema   string
 
 	ClientACLs  []*ClientACL
 	ClientZones map[string]Zones
@@ -115,17 +117,18 @@ func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views,
 	userIP := net.ParseIP(state.IP())
 
 	for _, cidrNet := range c.CIDRNets {
-		zone, ok := v.ClientZones[c.Name].Z[state.QName()]
-		if !ok {
-			errCh <- fmt.Errorf("no client zone was found. Client: %s, Zone: %s", c.Name, state.QName())
-		}
-
 		wg.Add(1)
-		go func(z Zone, cidrNet *net.IPNet) {
+		go func(cidrNet *net.IPNet) {
 			defer wg.Done()
 
 			if cidrNet.Contains(userIP) {
+				z, ok := v.ClientZones[c.Name].Z[qname]
+				if !ok {
+					errCh <- fmt.Errorf("no zone was found. Zone: %s", qname)
+				}
+
 				log.Infof("found match for user IP (%s) with registered client (%s) \"%s\"", userIP.String(), c.Name, qname)
+
 				var answers []dns.RR
 				rr := new(dns.CNAME)
 				rr.Hdr = dns.RR_Header{Name: qname, Rrtype: z.Type, Class: state.QClass(), Ttl: z.TTL}
@@ -139,7 +142,7 @@ func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views,
 				}
 				resultCh <- answers
 			}
-		}(zone, cidrNet)
+		}(cidrNet)
 	}
 }
 

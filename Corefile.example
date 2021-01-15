@@ -26,8 +26,8 @@ example.internal {
     loadbalance round_robin
 
     views {
-        clients data/clients.yaml
-        records data/records.yaml
+        client data/clients.yaml
+        record data/records.yaml
         reload 2s
     }
 
