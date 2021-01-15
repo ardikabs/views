@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/coredns/coredns/plugin"
@@ -53,17 +54,51 @@ type (
 // ServeDNS implements the plugin.Handler interface.
 func (v Views) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
-	answers, err := v.lookup(ctx, state)
-	if err != nil {
-		return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
+
+	var (
+		wg      sync.WaitGroup
+		answers []dns.RR
+	)
+
+	resultChan := make(chan []dns.RR)
+	errChan := make(chan error)
+	doneChan := make(chan bool, 1)
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+		close(errChan)
+		doneChan <- true
+	}()
+
+	for _, client := range v.ClientACLs {
+		wg.Add(1)
+		go client.lookup(ctx, state, &v, &wg, resultChan, errChan)
 	}
 
+	for {
+		select {
+		case answers = <-resultChan:
+			if len(answers) > 0 {
+				goto Message
+			}
+			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
+		case err := <-errChan:
+			log.Error(err)
+			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
+		case <-doneChan:
+			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
+		}
+
+	}
+
+Message:
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = true
 	m.Answer = answers
 
-	err = w.WriteMsg(m)
+	err := w.WriteMsg(m)
 	if err != nil {
 		log.Error(err)
 		return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
@@ -72,44 +107,40 @@ func (v Views) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (
 	return dns.RcodeSuccess, nil
 }
 
-// Name implements the Handler interface.
-func (v Views) Name() string { return "views" }
+func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views, wg *sync.WaitGroup, resultCh chan []dns.RR, errCh chan error) {
+	defer wg.Done()
 
-func (v *Views) lookup(ctx context.Context, state request.Request) (answers []dns.RR, err error) {
 	qname := state.QName()
+	qtype := state.QType()
 	userIP := net.ParseIP(state.IP())
 
-Loop:
-	for _, client := range v.ClientACLs {
-		for _, cidrNet := range client.CIDRNets {
+	for _, cidrNet := range c.CIDRNets {
+		zone, ok := v.ClientZones[c.Name].Z[state.QName()]
+		if !ok {
+			errCh <- fmt.Errorf("no client zone was found. Client: %s, Zone: %s", c.Name, state.QName())
+		}
+
+		wg.Add(1)
+		go func(z Zone, cidrNet *net.IPNet) {
+			defer wg.Done()
+
 			if cidrNet.Contains(userIP) {
-				log.Infof("found match for user IP (%s) with registered client (%s) \"%s\"", userIP.String(), client.Name, qname)
-
-				z, ok := v.ClientZones[client.Name].Z[qname]
-				if !ok {
-					err = fmt.Errorf("no client zone was found. Client: %s, Zone: %s", client.Name, qname)
-				}
-
-				if z.Value == "" {
-					err = fmt.Errorf("no record value was found. Zone: %s", qname)
-				}
-
+				log.Infof("found match for user IP (%s) with registered client (%s) \"%s\"", userIP.String(), c.Name, qname)
+				var answers []dns.RR
 				rr := new(dns.CNAME)
 				rr.Hdr = dns.RR_Header{Name: qname, Rrtype: z.Type, Class: state.QClass(), Ttl: z.TTL}
 				rr.Target = z.Value
 
 				answers = append(answers, rr)
 
-				if state.QType() != dns.TypeCNAME {
-					rrs := v.doLookup(ctx, state, z.Value, state.QType())
+				if qtype != dns.TypeCNAME {
+					rrs := v.doLookup(ctx, state, z.Value, qtype)
 					answers = append(answers, rrs...)
 				}
-				break Loop
+				resultCh <- answers
 			}
-		}
+		}(zone, cidrNet)
 	}
-
-	return
 }
 
 func (v *Views) doLookup(ctx context.Context, state request.Request, target string, qtype uint16) []dns.RR {
@@ -131,3 +162,6 @@ func (v *Views) doLookup(ctx context.Context, state request.Request, target stri
 	}
 	return m.Answer
 }
+
+// Name implements the Handler interface.
+func (v Views) Name() string { return "views" }
