@@ -1,9 +1,12 @@
 package views
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,21 +24,21 @@ var (
 )
 
 type (
-	// ClientACLFile represent specification of Client ACL YAML-file
-	ClientACLFile struct {
-		Name         string   `yaml:"name"`
-		CIDRPrefixes []string `yaml:"prefix_list"`
+	// RawClientACL represent specification of Client ACL YAML-file
+	RawClientACL struct {
+		Name         string   `yaml:"name" json:"name"`
+		CIDRPrefixes []string `yaml:"prefixes" json:"prefixes"`
 	}
 
-	// RecordFile represent specification of Record YAML-file
-	RecordFile struct {
-		Name    string `yaml:"name"`
+	// RawRecord represent specification of Record YAML-file
+	RawRecord struct {
+		Name    string `yaml:"name" json:"name"`
 		Records []struct {
-			Name  string `yaml:"name"`
-			TTL   uint32 `yaml:"ttl"`
-			Type  string `yaml:"type"`
-			Value string `yaml:"value"`
-		} `yaml:"records"`
+			Name  string `yaml:"name" json:"name"`
+			TTL   uint32 `yaml:"ttl" json:"ttl"`
+			Type  string `yaml:"type" json:"type"`
+			Value string `yaml:"value" json:"value"`
+		} `yaml:"records" json:"records"`
 	}
 )
 
@@ -73,8 +76,11 @@ const (
 
 func parse(c *caddy.Controller) (*Views, error) {
 	var (
-		clientFilename string
-		recordFilename string
+		client       string
+		clientSchema string
+		record       string
+		recordSchema string
+		err          error
 	)
 
 	v := Views{
@@ -85,10 +91,18 @@ func parse(c *caddy.Controller) (*Views, error) {
 	for c.Next() {
 		for c.NextBlock() {
 			switch c.Val() {
-			case "clients":
-				clientFilename = c.RemainingArgs()[0]
-			case "records":
-				recordFilename = c.RemainingArgs()[0]
+			case "client":
+				client = c.RemainingArgs()[0]
+				clientSchema, err = schemaCheck(client)
+				if err != nil {
+					return nil, err
+				}
+			case "record":
+				record = c.RemainingArgs()[0]
+				recordSchema, err = schemaCheck(record)
+				if err != nil {
+					return nil, err
+				}
 			case "reload":
 				d, err := time.ParseDuration(c.RemainingArgs()[0])
 				if err != nil {
@@ -101,12 +115,20 @@ func parse(c *caddy.Controller) (*Views, error) {
 		}
 	}
 
-	if clientFilename == "" && recordFilename == "" {
-		return nil, fmt.Errorf("required argument is missing: (client: '%s') and (records: '%s')", clientFilename, recordFilename)
+	if err != nil {
+		return nil, err
 	}
 
-	v.ClientFilename = clientFilename
-	v.RecordFilename = recordFilename
+	if client == "" {
+		return nil, fmt.Errorf("required argument is missing: 'client'")
+	} else if record == "" {
+		return nil, fmt.Errorf("required argument is missing: 'record'")
+	}
+
+	v.Client = client
+	v.Record = record
+	v.ClientSchema = clientSchema
+	v.RecordSchema = recordSchema
 
 	return &v, nil
 }
@@ -130,19 +152,31 @@ func (v *Views) reload() chan bool {
 }
 
 func (v *Views) loadConfig() {
-	var rawClients []ClientACLFile
-	var rawRecords []RecordFile
+	var (
+		rawClients []RawClientACL
+		rawRecords []RawRecord
+		err        error
+	)
 
-	file, err := ioutil.ReadFile(v.ClientFilename)
-	err = yaml.Unmarshal(file, &rawClients)
-	if err != nil {
-		log.Fatalf("error: %v", err)
+	switch v.ClientSchema {
+	case SchemaYAML:
+		err = parseFromYAML(v.Client, &rawClients)
+	case SchemaHTTP:
+		err = parseFromHTTP(v.Client, &rawClients)
 	}
 
-	file, err = ioutil.ReadFile(v.RecordFilename)
-	err = yaml.Unmarshal(file, &rawRecords)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		log.Error(err)
+	}
+
+	switch v.RecordSchema {
+	case SchemaYAML:
+		err = parseFromYAML(v.Record, &rawRecords)
+	case SchemaHTTP:
+		err = parseFromHTTP(v.Record, &rawRecords)
+	}
+	if err != nil {
+		log.Error(err)
 	}
 
 	v.ClientACLs = []*ClientACL{}
@@ -200,4 +234,64 @@ func (v *Views) loadConfig() {
 
 		v.ClientZones[r.Name] = zones
 	}
+}
+
+func parseFromYAML(filename string, out interface{}) error {
+	file, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	err = yaml.Unmarshal(file, out)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parseFromHTTP(endpoint string, out interface{}) (err error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		u.String(),
+		nil,
+	)
+	if err != nil {
+		return
+	}
+
+	client := &http.Client{
+		Timeout: time.Duration(60) * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+
+	err = json.Unmarshal(body, out)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func schemaCheck(str string) (string, error) {
+	if strings.HasPrefix(str, "http://") || strings.HasPrefix(str, "https://") {
+		return SchemaHTTP, nil
+	} else if strings.HasSuffix(str, ".yaml") || strings.HasSuffix(str, ".yml") {
+		return SchemaYAML, nil
+	}
+	return "", fmt.Errorf("unknown schema: %s", str)
 }
