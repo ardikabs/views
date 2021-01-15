@@ -21,18 +21,17 @@ local:65353 {
 }
 
 example.internal {
-    reload 2s
     log
     errors
     loadbalance round_robin
 
     views {
-        reload 10s
         clients data/clients.yaml
         records data/records.yaml
+        reload 2s
     }
 
-    file data/zones/db.example.internal example.internal {
+    file data/generated/db.example.internal example.internal {
         reload 10s
     }
 }
