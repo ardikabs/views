@@ -14,5 +14,5 @@
   records:
   - name: db.example.internal
     ttl: 300
-    type: CNAME
+    type: ANY
     value: db-dc2.example.internal

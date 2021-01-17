@@ -1,6 +1,35 @@
 package views
 
+import (
+	"fmt"
+	"net"
+	"strings"
+
+	"github.com/coredns/coredns/plugin"
+	"github.com/miekg/dns"
+)
+
 type (
+	// ClientACL represent Client definition and their CIDR Prefix list
+	ClientACL struct {
+		Name     string
+		CIDRNets []*net.IPNet
+	}
+
+	// Zones represent list of zones available
+	Zones struct {
+		Z     map[string]Zone
+		Names []string
+	}
+
+	// Zone represent of single zone record definition
+	Zone struct {
+		Name  string
+		TTL   uint32
+		Type  uint16
+		Value string
+	}
+
 	// Origin represent of zone origin following on RFC 1035-style
 	Origin struct {
 		Name       string
@@ -28,6 +57,26 @@ type (
 		QClass string
 		Value  string
 	}
+
+	// RawClientACL represent specification of Client ACL YAML-file
+	RawClientACL struct {
+		Name         string   `yaml:"name" json:"name"`
+		CIDRPrefixes []string `yaml:"prefixes" json:"prefixes"`
+	}
+
+	// RawRecord represent specification of Record YAML-file
+	RawRecord struct {
+		Name    string          `yaml:"name" json:"name"`
+		Records []RawRecordUnit `yaml:"records" json:"records"`
+	}
+
+	// RawRecordUnit represent a smallest unit of Record YAML-file
+	RawRecordUnit struct {
+		Name  string `yaml:"name" json:"name"`
+		TTL   uint32 `yaml:"ttl" json:"ttl"`
+		Type  string `yaml:"type" json:"type"`
+		Value string `yaml:"value" json:"value"`
+	}
 )
 
 const (
@@ -49,6 +98,33 @@ const (
 
 	// SchemaYAML represent of YAML schema
 	SchemaYAML = "yaml"
-	// SchemaYAML represent of HTTP schema
+
+	// SchemaHTTP represent of HTTP schema
 	SchemaHTTP = "http"
 )
+
+// NewZoneRecord is method to create new zone record from raw record unit
+func NewZoneRecord(record RawRecordUnit) (Zone, error) {
+	t := strings.ToUpper(record.Type)
+	var rrtype uint16
+
+	switch t {
+	case "A":
+		rrtype = dns.TypeA
+	case "AAAA":
+		rrtype = dns.TypeAAAA
+	case "CNAME":
+		rrtype = dns.TypeCNAME
+	case "TXT":
+		rrtype = dns.TypeTXT
+	default:
+		return Zone{}, fmt.Errorf("unknown type for record %s: \"%s\"", record.Name, t)
+	}
+
+	return Zone{
+		Name:  plugin.Host(record.Name).Normalize(),
+		TTL:   record.TTL,
+		Type:  rrtype,
+		Value: plugin.Host(record.Value).Normalize(),
+	}, nil
+}

@@ -21,6 +21,7 @@ local:65353 {
 }
 
 example.internal {
+    reload 10s
     log
     errors
     loadbalance round_robin
@@ -28,7 +29,7 @@ example.internal {
     views {
         client data/clients.yaml
         record data/records.yaml
-        reload 2s
+        reload 20s
     }
 
     file data/generated/db.example.internal example.internal {

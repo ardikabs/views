@@ -1,7 +1,6 @@
 package views
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -15,31 +14,15 @@ import (
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/plugin/pkg/upstream"
-	"github.com/miekg/dns"
 	"gopkg.in/yaml.v2"
+)
+
+const (
+	defaultReloadInterval = 30 * time.Second
 )
 
 var (
 	log = clog.NewWithPlugin("views")
-)
-
-type (
-	// RawClientACL represent specification of Client ACL YAML-file
-	RawClientACL struct {
-		Name         string   `yaml:"name" json:"name"`
-		CIDRPrefixes []string `yaml:"prefixes" json:"prefixes"`
-	}
-
-	// RawRecord represent specification of Record YAML-file
-	RawRecord struct {
-		Name    string `yaml:"name" json:"name"`
-		Records []struct {
-			Name  string `yaml:"name" json:"name"`
-			TTL   uint32 `yaml:"ttl" json:"ttl"`
-			Type  string `yaml:"type" json:"type"`
-			Value string `yaml:"value" json:"value"`
-		} `yaml:"records" json:"records"`
-	}
 )
 
 func init() { plugin.Register("views", setup) }
@@ -69,10 +52,6 @@ func setup(c *caddy.Controller) error {
 
 	return nil
 }
-
-const (
-	defaultReloadInterval = 30 * time.Second
-)
 
 func parse(c *caddy.Controller) (*Views, error) {
 	var (
@@ -186,10 +165,9 @@ func (v *Views) loadConfig() {
 		for _, cidr := range client.CIDRPrefixes {
 			_, cidrNet, err := net.ParseCIDR(cidr)
 			if err != nil {
-				log.Warningf("invalid CIDR address: %s (%s)", client.Name, cidr)
+				log.Warningf("(%s) invalid CIDR address: %s", client.Name, cidr)
 				continue
 			}
-
 			cidrNets = append(cidrNets, cidrNet)
 		}
 
@@ -200,39 +178,24 @@ func (v *Views) loadConfig() {
 	}
 
 	v.ClientZones = make(map[string]Zones)
-	for _, r := range rawRecords {
+	for _, raw := range rawRecords {
 		zones := Zones{
 			Names: []string{},
 			Z:     make(map[string]Zone),
 		}
 
-		for _, rawRecord := range r.Records {
-			t := strings.ToUpper(rawRecord.Type)
-			var rrtype uint16
-
-			switch t {
-			case "A":
-				rrtype = dns.TypeA
-			case "AAAA":
-				rrtype = dns.TypeAAAA
-			case "CNAME":
-				rrtype = dns.TypeCNAME
-			case "TXT":
-				rrtype = dns.TypeTXT
-			}
-
-			rr := Zone{
-				Name:  plugin.Host(rawRecord.Name).Normalize(),
-				TTL:   rawRecord.TTL,
-				Type:  rrtype,
-				Value: plugin.Host(rawRecord.Value).Normalize(),
+		for _, record := range raw.Records {
+			rr, err := NewZoneRecord(record)
+			if err != nil {
+				log.Warningf("(%s) %s", raw.Name, err)
+				continue
 			}
 
 			zones.Names = append(zones.Names, rr.Name)
 			zones.Z[rr.Name] = rr
 		}
 
-		v.ClientZones[r.Name] = zones
+		v.ClientZones[raw.Name] = zones
 	}
 }
 
@@ -280,7 +243,7 @@ func parseFromHTTP(endpoint string, out interface{}) (err error) {
 		return
 	}
 
-	err = json.Unmarshal(body, out)
+	err = yaml.Unmarshal(body, out)
 	if err != nil {
 		return
 	}
