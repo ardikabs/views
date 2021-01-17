@@ -1,6 +1,7 @@
 package views
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -243,7 +244,7 @@ func parseFromHTTP(endpoint string, out interface{}) (err error) {
 		return
 	}
 
-	err = yaml.Unmarshal(body, out)
+	err = json.Unmarshal(body, out)
 	if err != nil {
 		return
 	}
