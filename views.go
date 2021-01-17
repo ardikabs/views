@@ -17,41 +17,19 @@ import (
 
 // Views represent of plugin that route dns resolving based on user IP
 type Views struct {
-	Next plugin.Handler
-	Fall fall.F
-
+	Next           plugin.Handler
+	Fall           fall.F
+	Upstream       *upstream.Upstream
 	ReloadInterval time.Duration
-	Client         string
-	ClientSchema   string
-	Record         string
-	RecordSchema   string
+
+	Client       string
+	ClientSchema string
+	Record       string
+	RecordSchema string
 
 	ClientACLs  []*ClientACL
 	ClientZones map[string]Zones
-	Upstream    *upstream.Upstream
 }
-
-type (
-	// ClientACL represent Client definition and their CIDR Prefix list
-	ClientACL struct {
-		Name     string
-		CIDRNets []*net.IPNet
-	}
-
-	// Zones represent list of zones available
-	Zones struct {
-		Z     map[string]Zone
-		Names []string
-	}
-
-	// Zone represent of single zone record definition
-	Zone struct {
-		Name  string
-		TTL   uint32
-		Type  uint16
-		Value string
-	}
-)
 
 // ServeDNS implements the plugin.Handler interface.
 func (v Views) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
@@ -81,14 +59,20 @@ func (v Views) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (
 	for {
 		select {
 		case answers = <-resultChan:
+			// calling this section when we got an answers
 			if len(answers) > 0 {
 				goto Message
 			}
+			// if answers is empty, forward to the next plugin
 			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
 		case err := <-errChan:
+			// calling this section when we caught an error,
+			// and forward to the next plugin
 			log.Error(err)
 			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
 		case <-doneChan:
+			// calling this section when the process is done and not giving any result,
+			// and forward to the next plugin
 			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
 		}
 
