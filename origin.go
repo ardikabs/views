@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/coredns/coredns/plugin"
 )
@@ -21,14 +22,27 @@ $TTL {{ .DefaultTTL }}
 {{ end }}
 `
 
+// Origin represent of zone origin following on RFC 1035-style
+type Origin struct {
+	Name       string
+	DefaultTTL uint32
+	SOA        SOA
+	Records    []Record
+}
+
 // Render implement rendering zone file from origin data
-func Render(filepath string, o Origin) {
+func (o *Origin) Render(path string) {
+	if strings.HasSuffix(path, "/") {
+		path = path[:len(path)-1]
+	}
+
 	funcMap := template.FuncMap{
 		"normalize": normalize,
 	}
+
 	tmpl := template.Must(template.New("origin").Funcs(funcMap).Parse(originDBTmpl))
 
-	f, err := os.Create(fmt.Sprintf("%s/db.%s", filepath, o.Name))
+	f, err := os.Create(fmt.Sprintf("%s/db.%s", path, o.Name))
 	if err != nil {
 		log.Error(err)
 	}

@@ -83,9 +83,8 @@ func main() {
 		},
 	}
 
-	filepath := string("/Users/supermonster/Workspaces/workshop/coredns/views/data/generated")
-
+	filepath := string("./data/generated")
 	for _, o := range origins {
-		views.Render(filepath, o)
+		o.Render(filepath)
 	}
 }

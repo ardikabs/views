@@ -55,14 +55,6 @@ func setup(c *caddy.Controller) error {
 }
 
 func parse(c *caddy.Controller) (*Views, error) {
-	var (
-		client       string
-		clientSchema string
-		record       string
-		recordSchema string
-		err          error
-	)
-
 	v := Views{
 		ReloadInterval: defaultReloadInterval,
 		Upstream:       upstream.New(),
@@ -72,17 +64,21 @@ func parse(c *caddy.Controller) (*Views, error) {
 		for c.NextBlock() {
 			switch c.Val() {
 			case "client":
-				client = c.RemainingArgs()[0]
-				clientSchema, err = schemaCheck(client)
+				cl := c.RemainingArgs()[0]
+				s, err := schemaCheck(cl)
 				if err != nil {
 					return nil, err
 				}
+				v.Client = cl
+				v.ClientSchema = s
 			case "record":
-				record = c.RemainingArgs()[0]
-				recordSchema, err = schemaCheck(record)
+				re := c.RemainingArgs()[0]
+				s, err := schemaCheck(re)
 				if err != nil {
 					return nil, err
 				}
+				v.Record = re
+				v.RecordSchema = s
 			case "reload":
 				d, err := time.ParseDuration(c.RemainingArgs()[0])
 				if err != nil {
@@ -95,20 +91,13 @@ func parse(c *caddy.Controller) (*Views, error) {
 		}
 	}
 
-	if err != nil {
-		return nil, err
+	if v.Client == "" {
+		return nil, fmt.Errorf("required argument is missing: 'client'")
 	}
 
-	if client == "" {
-		return nil, fmt.Errorf("required argument is missing: 'client'")
-	} else if record == "" {
+	if v.Record == "" {
 		return nil, fmt.Errorf("required argument is missing: 'record'")
 	}
-
-	v.Client = client
-	v.Record = record
-	v.ClientSchema = clientSchema
-	v.RecordSchema = recordSchema
 
 	return &v, nil
 }
@@ -166,7 +155,7 @@ func (v *Views) loadConfig() {
 		for _, cidr := range client.CIDRPrefixes {
 			_, cidrNet, err := net.ParseCIDR(cidr)
 			if err != nil {
-				log.Warningf("(%s) invalid CIDR address: %s", client.Name, cidr)
+				log.Warningf("(%s) %s", client.Name, err)
 				continue
 			}
 			cidrNets = append(cidrNets, cidrNet)

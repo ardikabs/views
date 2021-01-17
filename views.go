@@ -40,39 +40,40 @@ func (v Views) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (
 		answers []dns.RR
 	)
 
-	resultChan := make(chan []dns.RR)
-	errChan := make(chan error)
-	doneChan := make(chan bool, 1)
+	answersCh := make(chan []dns.RR)
+	errCh := make(chan error)
+	doneCh := make(chan bool, 1)
 
 	go func() {
+		defer close(answersCh)
+		defer close(errCh)
+
 		wg.Wait()
-		close(resultChan)
-		close(errChan)
-		doneChan <- true
+		doneCh <- true
 	}()
 
 	for _, client := range v.ClientACLs {
 		wg.Add(1)
-		go client.lookup(ctx, state, &v, &wg, resultChan, errChan)
+		go client.lookup(ctx, state, &v, &wg, answersCh, errCh)
 	}
 
 	for {
 		select {
-		case answers = <-resultChan:
-			// calling this section when we got an answers
+		case answers = <-answersCh:
+			// when we got an answers, response with the message
 			if len(answers) > 0 {
 				goto Message
 			}
-			// if answers is empty, forward to the next plugin
+			// if answers is empty, then go to the next plugin
 			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
-		case err := <-errChan:
-			// calling this section when we caught an error,
-			// and forward to the next plugin
+		case err := <-errCh:
+			// when we caught an error,
+			// then go to the next plugin
 			log.Error(err)
 			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
-		case <-doneChan:
-			// calling this section when the process is done and not giving any result,
-			// and forward to the next plugin
+		case <-doneCh:
+			// when the process is done and not giving any result,
+			// then go to the next plugin
 			return plugin.NextOrFailure(v.Name(), v.Next, ctx, w, r)
 		}
 
@@ -91,9 +92,10 @@ Message:
 	}
 
 	return dns.RcodeSuccess, nil
+
 }
 
-func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views, wg *sync.WaitGroup, resultCh chan []dns.RR, errCh chan error) {
+func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views, wg *sync.WaitGroup, answersCh chan []dns.RR, errCh chan error) {
 	defer wg.Done()
 
 	qname := state.QName()
@@ -111,7 +113,7 @@ func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views,
 					errCh <- fmt.Errorf("no zone was found. Zone: %s", qname)
 				}
 
-				log.Infof("found match for user IP (%s) with registered client (%s) \"%s\"", userIP.String(), c.Name, qname)
+				log.Infof("(%s) found match for user IP (%s) with registered client CIDR prefixes: %s (%s)", c.Name, userIP.String(), cidrNet.String(), qname)
 
 				var answers []dns.RR
 				rr := new(dns.CNAME)
@@ -120,11 +122,14 @@ func (c *ClientACL) lookup(ctx context.Context, state request.Request, v *Views,
 
 				answers = append(answers, rr)
 
-				if qtype != dns.TypeCNAME {
+				switch qtype {
+				case dns.TypeCNAME:
+				default:
 					rrs := v.doLookup(ctx, state, z.Value, qtype)
 					answers = append(answers, rrs...)
 				}
-				resultCh <- answers
+
+				answersCh <- answers
 			}
 		}(cidrNet)
 	}

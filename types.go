@@ -30,14 +30,6 @@ type (
 		Value string
 	}
 
-	// Origin represent of zone origin following on RFC 1035-style
-	Origin struct {
-		Name       string
-		DefaultTTL uint32
-		SOA        SOA
-		Records    []Record
-	}
-
 	// SOA represent of SOA record
 	SOA struct {
 		MName            string
